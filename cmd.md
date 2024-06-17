@@ -1,6 +1,4 @@
-# README
-
-## Serve
+# CMD LIST
 
 create requirements.txt
 
