@@ -17,7 +17,9 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path
+from knowledge.views import KnowledgeView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("knowledge", KnowledgeView.as_view(), name="knowledge"),
 ]
