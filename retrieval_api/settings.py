@@ -39,7 +39,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.staticfiles",
     "rest_framework",
-    "vector",
+    "vector_db",
 ]
 
 MIDDLEWARE = [
