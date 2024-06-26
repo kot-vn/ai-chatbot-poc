@@ -38,8 +38,8 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.sessions",
     "django.contrib.staticfiles",
-    "pgvector",
     "rest_framework",
+    "vector",
 ]
 
 MIDDLEWARE = [
