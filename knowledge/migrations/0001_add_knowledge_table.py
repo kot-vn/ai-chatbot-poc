@@ -10,7 +10,6 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Knowledge",
             fields=[
-                ("account_id", models.IntegerField()),
                 ("url", models.CharField(max_length=255)),
                 (
                     "collection_id",
