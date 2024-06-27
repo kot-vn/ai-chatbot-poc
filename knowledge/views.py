@@ -173,8 +173,11 @@ class KnowledgeRetrieveView(APIView):
             embeddings = self.embeddings_helper.generate_embeddings(
                 openai_api_key, question
             )
+            top3_collection_ids = self.embeddings_helper.get_top3_similar_docs(
+                embeddings
+            )
 
-            return JsonResponse({"message": embeddings}, status=200)
+            return JsonResponse({"message": top3_collection_ids}, status=200)
         except Exception as e:
             error_message = str(e)
             return JsonResponse({"message": error_message}, status=500)
