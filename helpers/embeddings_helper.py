@@ -1,5 +1,6 @@
 import os
 
+from collections import Counter
 from constant_variables.configs import OPENAI_BASE_URL, OPENAI_EMBEDDINGS_MODEL
 from django.db import connections
 from langchain_openai import OpenAIEmbeddings
@@ -19,7 +20,7 @@ class EmbeddingsHelper:
         )
         return embeddings.embed_query(documents)
 
-    def get_top3_similar_docs(self, query: List[float]) -> List[Tuple[str]]:
+    def get_top3_similar_collections(self, query: List[float]) -> List[Tuple[str]]:
         with connections["default"].cursor() as cursor:
             cursor.execute(
                 "SELECT collection_id FROM knowledge",
@@ -42,3 +43,9 @@ class EmbeddingsHelper:
 
             collection_ids = cursor.fetchall()
         return collection_ids
+
+    def get_most_similar_collection(self, collection_ids: List[Tuple[str]]) -> str:
+        collection_ids = [item for sublist in collection_ids for item in sublist]
+        counter = Counter(collection_ids)
+        most_common = counter.most_common(1)
+        return most_common[0][0] if most_common else None

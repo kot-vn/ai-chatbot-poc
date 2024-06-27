@@ -6,10 +6,12 @@ import shutil
 from api_services.google_storage_api import GoogleStorageAPI
 from constant_variables.configs import (
     BUCKET_NAME,
+    CONTEXTUALIZE_Q_SYSTEM_PROMPT,
     DATABASE_URL,
     DEFAULT_SYSTEM_PROMPT,
     DOC_EXTENSIONS,
     OPENAI_BASE_URL,
+    OPENAI_CHAT_MODEL,
     OPENAI_EMBEDDINGS_MODEL,
 )
 from django.core.files.storage import FileSystemStorage
@@ -24,9 +26,15 @@ from knowledge.serializers import (
     KnowledgeDeleteSerializer,
     KnowledgeRetrieveSerializer,
 )
+from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_community.vectorstores.pgvector import PGVector
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_openai import ChatOpenAI
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
 from rest_framework.views import APIView
 from vector_db.models import Collection
 
@@ -151,6 +159,7 @@ class KnowledgeRetrieveView(APIView):
     def __init__(self):
         self.db_helper = DBHelper()
         self.embeddings_helper = EmbeddingsHelper()
+        self.connection_string = DATABASE_URL
 
     def post(self, request):
         try:
@@ -173,11 +182,79 @@ class KnowledgeRetrieveView(APIView):
             embeddings = self.embeddings_helper.generate_embeddings(
                 openai_api_key, question
             )
-            top3_collection_ids = self.embeddings_helper.get_top3_similar_docs(
+            top3_collection_ids = self.embeddings_helper.get_top3_similar_collections(
                 embeddings
             )
+            collection_id = self.embeddings_helper.get_most_similar_collection(
+                top3_collection_ids
+            )
+            collection_name = Collection.objects.get(uuid=collection_id).name
+            session_id = base64.urlsafe_b64encode(secrets.token_bytes(8)).decode(
+                "utf-8"
+            )
+            llm = ChatOpenAI(
+                model=OPENAI_CHAT_MODEL,
+                base_url=OPENAI_BASE_URL,
+            )
+            embeddings = OpenAIEmbeddings(
+                check_embedding_ctx_length=False,
+                base_url=OPENAI_BASE_URL,
+                model=OPENAI_EMBEDDINGS_MODEL,
+            )
+            connection_string = self.connection_string
 
-            return JsonResponse({"message": top3_collection_ids}, status=200)
+            store = PGVector(
+                connection_string=connection_string,
+                embedding_function=embeddings,
+                collection_name=collection_name,
+                use_jsonb=True,
+            )
+            retriever = store.as_retriever()
+
+            ### Contextualize question ###
+            contextualize_q_system_prompt = CONTEXTUALIZE_Q_SYSTEM_PROMPT
+            contextualize_q_prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", contextualize_q_system_prompt),
+                    MessagesPlaceholder("chat_history"),
+                    ("human", "{input}"),
+                ]
+            )
+            history_aware_retriever = create_history_aware_retriever(
+                llm, retriever, contextualize_q_prompt
+            )
+
+            ### Answer question ###
+            qa_system_prompt = system_prompt + """{context}"""
+            qa_prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", qa_system_prompt),
+                    MessagesPlaceholder("chat_history"),
+                    ("human", "{input}"),
+                ]
+            )
+            question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+            rag_chain = create_retrieval_chain(
+                history_aware_retriever, question_answer_chain
+            )
+
+            ### Statefully manage chat history ###
+            store = {}
+            conversational_rag_chain = RunnableWithMessageHistory(
+                rag_chain,
+                lambda session_id: ChatMessageHistory()
+                if session_id not in store
+                else store[session_id],
+                input_messages_key="input",
+                history_messages_key="chat_history",
+                output_messages_key="answer",
+            )
+            answer = conversational_rag_chain.invoke(
+                {"input": question},
+                config={"configurable": {"session_id": session_id}},
+            )["answer"]
+
+            return JsonResponse({"message": answer})
         except Exception as e:
             error_message = str(e)
             return JsonResponse({"message": error_message}, status=500)
