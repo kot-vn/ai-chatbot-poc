@@ -4,14 +4,23 @@ import secrets
 import shutil
 
 from api_services.google_storage_api import GoogleStorageAPI
-from constant_variables.configs import DATABASE_URL, BUCKET_NAME, DOC_EXTENSIONS
+from constant_variables.configs import (
+    BUCKET_NAME,
+    DATABASE_URL,
+    DOC_EXTENSIONS,
+    OPENAI_BASE_URL,
+    OPENAI_EMBEDDINGS_MODEL,
+)
 from django.core.files.storage import FileSystemStorage
 from django.http import JsonResponse
 from helpers.file_helper import FileHelper
+from knowledge.models import Knowledge
 from knowledge.serializers import KnowledgeSerializer
+from langchain_community.vectorstores.pgvector import PGVector
+from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rest_framework.views import APIView
-from langchain_openai import OpenAIEmbeddings
+from vector_db.models import Collection
 
 
 class KnowledgeView(APIView):
@@ -34,15 +43,15 @@ class KnowledgeView(APIView):
             if file_extension not in DOC_EXTENSIONS:
                 return JsonResponse({"message": "Please upload a txt file"}, status=400)
 
-            url_safe_string = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode(
+            safe_string = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode(
                 "utf-8"
             )
-            tmp_storage_path = f"tmp/{url_safe_string}"
+            tmp_storage_path = f"tmp/{safe_string}"
             os.makedirs(tmp_storage_path, exist_ok=True)
             file_path = os.path.join(tmp_storage_path, file_name)
             FileSystemStorage(location=tmp_storage_path).save(file_name, file)
 
-            storage_path = f"knowledges/{url_safe_string}/{file_name}"
+            storage_path = f"knowledges/{safe_string}/{file_name}"
             knowledge_url = self.google_storage.upload_blob(
                 BUCKET_NAME, file_path, storage_path
             )
@@ -63,11 +72,31 @@ class KnowledgeView(APIView):
                 length_function=len,
             )
             docs = text_splitter.split_documents(knowledge)
-            embeddings = OpenAIEmbeddings()
+            embeddings = OpenAIEmbeddings(
+                check_embedding_ctx_length=False,
+                base_url=OPENAI_BASE_URL,
+                model=OPENAI_EMBEDDINGS_MODEL,
+            )
+            collection_name = f"langchain_{safe_string}"
 
-            #  TODO: Add embedding
+            PGVector.from_documents(
+                embedding=embeddings,
+                documents=docs,
+                collection_name=collection_name,
+                connection_string=self.connection_string,
+                use_jsonb=True,
+            )
 
+            collection_id = Collection.objects.get(name=collection_name).uuid
+
+            Knowledge.objects.create(
+                url=knowledge_url,
+                collection_id=collection_id,
+            )
             shutil.rmtree(tmp_storage_path)
+
+            return JsonResponse({"message": "Successfully created embeddings"})
         except Exception as e:
+            shutil.rmtree(tmp_storage_path)
             error_message = str(e)
             return JsonResponse({"message": error_message}, status=500)
