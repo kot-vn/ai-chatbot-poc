@@ -20,3 +20,20 @@ python manage.py migrate
 ```shell
 python manage.py runserver 0.0.0.0:8000
 ```
+
+## cUrl
+
+embedding
+
+```shell
+curl --location 'http://localhost:8000/knowledge' \
+--form 'openai_api_key="key"' \
+--form 'file=@"example.txt"'
+```
+
+delete knowledge
+
+```shell
+curl --location --request DELETE 'http://localhost:8000/knowledge' \
+--form 'url="gs://bucket_name/example.txt"'
+```
