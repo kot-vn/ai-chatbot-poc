@@ -7,16 +7,23 @@ from api_services.google_storage_api import GoogleStorageAPI
 from constant_variables.configs import (
     BUCKET_NAME,
     DATABASE_URL,
+    DEFAULT_SYSTEM_PROMPT,
     DOC_EXTENSIONS,
     OPENAI_BASE_URL,
     OPENAI_EMBEDDINGS_MODEL,
 )
 from django.core.files.storage import FileSystemStorage
 from django.http import JsonResponse
+from helpers.db_helper import DBHelper
+from helpers.embeddings_helper import EmbeddingsHelper
 from helpers.file_helper import FileHelper
 from helpers.google_api_helper import GoogleApiHelper
 from knowledge.models import Knowledge
-from knowledge.serializers import KnowledgeCreateSerializer, KnowledgeDeleteSerializer
+from knowledge.serializers import (
+    KnowledgeCreateSerializer,
+    KnowledgeDeleteSerializer,
+    KnowledgeRetrieveSerializer,
+)
 from langchain_community.vectorstores.pgvector import PGVector
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -135,6 +142,39 @@ class KnowledgeView(APIView):
             self.google_storage.delete_blob(BUCKET_NAME, blob_name)
 
             return JsonResponse({"message": "Successfully deleted"})
+        except Exception as e:
+            error_message = str(e)
+            return JsonResponse({"message": error_message}, status=500)
+
+
+class KnowledgeRetrieveView(APIView):
+    def __init__(self):
+        self.db_helper = DBHelper()
+        self.embeddings_helper = EmbeddingsHelper()
+
+    def post(self, request):
+        try:
+            serializer = KnowledgeRetrieveSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            validated_data = serializer.validated_data
+
+            system_prompt = DEFAULT_SYSTEM_PROMPT
+            question = validated_data.get("question")
+            openai_api_key = validated_data.get("openai_api_key")
+
+            os.environ["OPENAI_API_KEY"] = openai_api_key
+
+            if self.db_helper.have_embeddings() is False:
+                return JsonResponse(
+                    {"message": "No embeddings found. Please create embeddings first"},
+                    status=200,
+                )
+
+            embeddings = self.embeddings_helper.generate_embeddings(
+                openai_api_key, question
+            )
+
+            return JsonResponse({"message": embeddings}, status=200)
         except Exception as e:
             error_message = str(e)
             return JsonResponse({"message": error_message}, status=500)

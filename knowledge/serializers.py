@@ -9,3 +9,8 @@ class KnowledgeCreateSerializer(serializers.Serializer):
 class KnowledgeDeleteSerializer(serializers.Serializer):
     url = serializers.CharField(required=True)
     openai_api_key = serializers.CharField(required=True)
+
+
+class KnowledgeRetrieveSerializer(serializers.Serializer):
+    openai_api_key = serializers.CharField(required=True)
+    question = serializers.CharField(required=True)

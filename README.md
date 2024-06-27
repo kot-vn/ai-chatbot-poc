@@ -18,6 +18,10 @@ python manage.py migrate
 ## Serve
 
 ```shell
+docker compose up -d
+```
+
+```shell
 python manage.py runserver 0.0.0.0:8000
 ```
 
