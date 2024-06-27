@@ -14,3 +14,4 @@ class KnowledgeDeleteSerializer(serializers.Serializer):
 class KnowledgeRetrieveSerializer(serializers.Serializer):
     openai_api_key = serializers.CharField(required=True)
     question = serializers.CharField(required=True)
+    user_id = serializers.CharField(required=True)

@@ -10,6 +10,7 @@ from constant_variables.configs import (
     DATABASE_URL,
     DEFAULT_SYSTEM_PROMPT,
     DOC_EXTENSIONS,
+    LANGSMITH_KEY,
     OPENAI_BASE_URL,
     OPENAI_CHAT_MODEL,
     OPENAI_EMBEDDINGS_MODEL,
@@ -26,7 +27,7 @@ from knowledge.serializers import (
     KnowledgeDeleteSerializer,
     KnowledgeRetrieveSerializer,
 )
-from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_community.chat_message_histories import RedisChatMessageHistory
 from langchain_community.vectorstores.pgvector import PGVector
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
@@ -37,6 +38,10 @@ from langchain.chains import create_history_aware_retriever, create_retrieval_ch
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from rest_framework.views import APIView
 from vector_db.models import Collection
+
+os.environ["LANGCHAIN_PROJECT"] = "retrieval_api"
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+os.environ["LANGCHAIN_API_KEY"] = LANGSMITH_KEY
 
 
 class KnowledgeView(APIView):
@@ -170,6 +175,7 @@ class KnowledgeRetrieveView(APIView):
             system_prompt = DEFAULT_SYSTEM_PROMPT
             question = validated_data.get("question")
             openai_api_key = validated_data.get("openai_api_key")
+            user_id = validated_data.get("user_id")
 
             os.environ["OPENAI_API_KEY"] = openai_api_key
 
@@ -189,9 +195,7 @@ class KnowledgeRetrieveView(APIView):
                 top3_collection_ids
             )
             collection_name = Collection.objects.get(uuid=collection_id).name
-            session_id = base64.urlsafe_b64encode(secrets.token_bytes(8)).decode(
-                "utf-8"
-            )
+            session_id = user_id
             llm = ChatOpenAI(
                 model=OPENAI_CHAT_MODEL,
                 base_url=OPENAI_BASE_URL,
@@ -239,12 +243,11 @@ class KnowledgeRetrieveView(APIView):
             )
 
             ### Statefully manage chat history ###
-            store = {}
             conversational_rag_chain = RunnableWithMessageHistory(
                 rag_chain,
-                lambda session_id: ChatMessageHistory()
-                if session_id not in store
-                else store[session_id],
+                lambda session_id: RedisChatMessageHistory(
+                    session_id, url="redis://localhost:6379"
+                ),
                 input_messages_key="input",
                 history_messages_key="chat_history",
                 output_messages_key="answer",
