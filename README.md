@@ -27,7 +27,7 @@ python manage.py runserver 0.0.0.0:8000
 
 ## cUrl
 
-embedding
+create knowledge
 
 ```shell
 curl --location 'http://localhost:8000/knowledge' \
@@ -40,4 +40,13 @@ delete knowledge
 ```shell
 curl --location --request DELETE 'http://localhost:8000/knowledge' \
 --form 'url="gs://bucket_name/example.txt"'
+```
+
+chat
+
+```shell
+curl --location 'http://localhost:8000/knowledge/retrieve' \
+--form 'openai_api_key="key"' \
+--form 'question="what is your name?"' \
+--form 'user_id="user_id"'
 ```
